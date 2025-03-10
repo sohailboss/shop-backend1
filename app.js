@@ -1,5 +1,6 @@
 const express = require('express');
 const app = express();
+const dotenv = require('dotenv').config();
 const {User} = require('./model/User');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
@@ -256,11 +257,61 @@ app.get('/product/search/:keyword',async(req,res)=>{
       res.status(500).json({message:"error searching products",error});
     }
   })
-    
+  //create route to add product in cart
+  app.post('/cart/add/',async(req,res)=>{
+  const body = req.body;
+  const productarray = body.products;
+  let totalPrice = 0;
 
+  try{
+    for(const item of productarray){
+        const product = await Product.findById(item);
 
+        if(product){
+            totalPrice += product.price;
+        }
+    }
+    const {token} = req.headers;
+    const decodedToken = jwt.verify(token,"supersecret");
+    const user= await User.findOne({email:decodedToken.email});
+    if(!user){
+        res.status(404).json({message:"User not found"});
+    }
+    let cart;
+    if(user.cart){
+        cart=await Cart.findById(user.cart).populate("products");
+        const existingProductIds = cart.products.map((product)=>{
+            product._id.toString()
+        })
+        productarray.forEach(async(productId)=>{
+            if(!existingProductIds.includes(productId)){
+                cart.products.push(productId);
+                const product = await Product.findById(productId);
+                totalPrice += product.Price;
+            }
+        })
+        cart.total = totalPrice;
+        await cart.save();
+    }else{
+        cart = new Cart({
+            products:productarray,
+            total:totalPrice
+        });
+        await cart.save();
+        user.cart=cart._id;
+        await user.save();
+      }
+  
+      res.status(201).json({
+        message: "Cart Updated Successfully",
+        cart: cart,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Error Adding to Cart", error });
+    }
+  });
 
-
+  
 
 let PORT = 8080;
 app.listen(PORT,()=>{
